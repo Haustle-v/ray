@@ -59,3 +59,35 @@ ray_cc_library(
         ":store_client",
     ],
 )
+
+ray_cc_library(
+    name = "ob_context",
+    srcs = ["ob_context.cc"],
+    hdrs = ["ob_context.h"],
+    deps = [
+        "//src/ray/common:asio",
+        "//src/ray/common:status",
+        "//src/ray/util:logging",
+        "//src/ray/core_worker:core_worker_lib",  # for thread_pool.h
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+    ],
+    linkopts = ["-lmysqlcppconn"],
+)
+
+ray_cc_library(
+    name = "ob_store_client",
+    srcs = ["ob_store_client.cc"],
+    hdrs = ["ob_store_client.h"],
+    deps = [
+        ":store_client",
+        ":ob_context",
+        "//src/ray/common:ray_config",
+        "//src/ray/common:status",
+        "//src/ray/util:container_util",
+        "//src/ray/util:logging",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+    ],
+)

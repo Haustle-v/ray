@@ -33,6 +33,8 @@
 #include "ray/gcs/grpc_services.h"
 #include "ray/gcs/store_client/in_memory_store_client.h"
 #include "ray/gcs/store_client/observable_store_client.h"
+#include "ray/gcs/store_client/ob_context.h"
+#include "ray/gcs/store_client/ob_store_client.h"
 #include "ray/gcs/store_client/redis_store_client.h"
 #include "ray/gcs/store_client/store_client.h"
 #include "ray/gcs/store_client_kv.h"
@@ -52,6 +54,8 @@ inline std::ostream &operator<<(std::ostream &str, GcsServer::StorageType val) {
     return str << "StorageType::IN_MEMORY";
   case GcsServer::StorageType::REDIS_PERSIST:
     return str << "StorageType::REDIS_PERSIST";
+  case GcsServer::StorageType::OB_PERSIST:
+    return str << "StorageType::OB_PERSIST";
   case GcsServer::StorageType::UNKNOWN:
     return str << "StorageType::UNKNOWN";
   default:
@@ -174,6 +178,23 @@ GcsServer::GcsServer(const ray::gcs::GcsServerConfig &config,
         "GCSServer.redis_health_check");
 
     store_client = redis_store_client;
+    break;
+  }
+  case StorageType::OB_PERSIST: {
+    auto ob_store_client =
+        std::make_shared<OBStoreClient>(io_context, GetOBClientOptions());
+    periodical_runner_->RunFnPeriodically(
+        [ob_store_client, &io_context] {
+          ob_store_client->AsyncCheckHealth(
+              {[](const Status &status) {
+                 RAY_CHECK_OK(status) << "OceanBase connection failed unexpectedly.";
+               },
+               io_context});
+        },
+        RayConfig::instance().gcs_ob_heartbeat_interval_milliseconds(),
+        "GCSServer.ob_health_check");
+
+    store_client = ob_store_client;
     break;
   }
   default:
@@ -601,6 +622,10 @@ GcsServer::StorageType GcsServer::GetStorageType() const {
     RAY_CHECK(!config_.redis_address.empty());
     return StorageType::REDIS_PERSIST;
   }
+  if (RayConfig::instance().gcs_storage() == kOBStorage) {
+    RAY_CHECK(!config_.ob_address.empty());
+    return StorageType::OB_PERSIST;
+  }
   RAY_LOG(FATAL) << "Unsupported GCS storage type: "
                  << RayConfig::instance().gcs_storage();
   return StorageType::UNKNOWN;
@@ -643,6 +668,10 @@ void GcsServer::InitKVManager() {
   case (StorageType::REDIS_PERSIST):
     store_client =
         std::make_unique<RedisStoreClient>(io_context, GetRedisClientOptions());
+    break;
+  case (StorageType::OB_PERSIST):
+    store_client =
+        std::make_unique<OBStoreClient>(io_context, GetOBClientOptions());
     break;
   case (StorageType::IN_MEMORY):
     store_client = std::make_unique<ObservableStoreClient>(
@@ -953,6 +982,16 @@ RedisClientOptions GcsServer::GetRedisClientOptions() {
                             config_.redis_username,
                             config_.redis_password,
                             config_.enable_redis_ssl};
+}
+
+OBClientOptions GcsServer::GetOBClientOptions() {
+  return OBClientOptions{config_.ob_address,
+                         config_.ob_port,
+                         config_.ob_username,
+                         config_.ob_password,
+                         config_.ob_database,
+                         config_.ob_connection_pool_size,
+                         config_.ob_thread_pool_size};
 }
 
 void GcsServer::TryGlobalGC() {
