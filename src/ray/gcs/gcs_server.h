@@ -72,6 +72,14 @@ struct GcsServerConfig {
   // This includes the config list of raylet.
   std::string raylet_config_list;
   std::string session_name;
+  // OceanBase configuration
+  std::string ob_address = "6.12.235.70";
+  uint16_t ob_port = 2881;
+  std::string ob_username = "root@sys";
+  std::string ob_password = "YdgmkMzQHygaaU325S84";
+  std::string ob_database = "test";
+  int ob_connection_pool_size = 12;
+  int ob_thread_pool_size = 10;
 };
 
 class GcsNodeManager;
@@ -83,6 +91,7 @@ class GcsPlacementGroupManager;
 class GcsTaskManager;
 class GcsAutoscalerStateManager;
 struct RedisClientOptions;
+struct OBClientOptions;
 
 /// The GcsServer will take over all requests from GcsClient and transparent
 /// transmit the command to the backend reliable storage for the time being.
@@ -125,10 +134,12 @@ class GcsServer {
     UNKNOWN = 0,
     IN_MEMORY = 1,
     REDIS_PERSIST = 2,
+    OB_PERSIST = 3,
   };
 
   static constexpr char kInMemoryStorage[] = "memory";
   static constexpr char kRedisStorage[] = "redis";
+  static constexpr char kOBStorage[] = "oceanbase";
 
   void UpdateGcsResourceManagerInTest(
       const NodeID &node_id,
@@ -229,6 +240,8 @@ class GcsServer {
   void GetOrGenerateClusterId(Postable<void(ClusterID cluster_id)> continuation);
 
   RedisClientOptions GetRedisClientOptions();
+
+  OBClientOptions GetOBClientOptions();
 
   void TryGlobalGC();
 

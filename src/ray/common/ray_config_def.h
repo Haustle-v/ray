@@ -373,6 +373,7 @@ RAY_CONFIG(int64_t, internal_gcs_service_connect_wait_milliseconds, 100)
 /// external Redis server. If a health check fails, the GCS will crash itself.
 /// Set to zero to disable health checking.
 RAY_CONFIG(uint64_t, gcs_redis_heartbeat_interval_milliseconds, 100)
+RAY_CONFIG(uint64_t, gcs_ob_heartbeat_interval_milliseconds, 1000)
 /// Duration to wait between retries for leasing worker in gcs server.
 RAY_CONFIG(uint32_t, gcs_lease_worker_retry_interval_ms, 200)
 /// Duration to wait between retries for creating actor in gcs server.

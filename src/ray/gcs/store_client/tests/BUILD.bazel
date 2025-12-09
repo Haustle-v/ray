@@ -122,3 +122,31 @@ ray_cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+ray_cc_test(
+    name = "ob_context_test",
+    size = "small",
+    srcs = ["ob_context_test.cc"],
+    tags = ["team:core"],
+    deps = [
+        "//src/ray/common:test_utils",
+        "//src/ray/gcs/store_client:ob_store_client",
+        "//src/ray/gcs/store_client:ob_context",
+        "//src/ray/util:raii",
+        "//src/ray/util:path_utils",
+        "//src/ray/util:time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+ray_cc_test(
+    name = "ob_store_client_test",
+    size = "small",
+    srcs = ["ob_store_client_test.cc"],
+    tags = ["team:core"],
+    deps = [
+        ":store_client_test_lib",
+        "//src/ray/gcs/store_client:ob_store_client",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
