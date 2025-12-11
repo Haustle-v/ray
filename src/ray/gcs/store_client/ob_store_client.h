@@ -36,6 +36,7 @@ struct OBCommand {
   std::string table_name;
   std::string sql;
   std::vector<std::string> bind_params;
+  bool is_select;
 };
 
 // StoreClient using OceanBase/MySQL as persistence backend.

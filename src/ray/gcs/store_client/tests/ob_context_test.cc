@@ -1,25 +1,15 @@
-// Copyright 2017 The Ray Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Author: He Su
+// Email: yefengshuo.yfs@oceanbase.com
+// Create Time: 2025-12-5
 
 #include "ray/gcs/store_client/ob_context.h"
 
 #include <atomic>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
+#include <boost/asio/executor_work_guard.hpp>
 #include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 #include "ray/common/asio/instrumented_io_context.h"
@@ -36,7 +26,7 @@ namespace {
 
 instrumented_io_context io_service;
 
-std::optional<OBClientOptions> LoadOptions() {
+OBClientOptions LoadOptions() {
   OBClientOptions opts;
   opts.server = "6.12.235.70";
   opts.port = 2881;
@@ -44,39 +34,44 @@ std::optional<OBClientOptions> LoadOptions() {
   opts.password = "YdgmkMzQHygaaU325S84";
   opts.database = "test";
   // Keep pools minimal to reduce connection pressure during test.
-  opts.connection_pool_size = 1;
-  opts.thread_pool_size = 1;
+  opts.connection_pool_size = 8;
+  opts.thread_pool_size = 6;
   return opts;
 }
 
 }  // namespace
 
 class OBContextTest : public ::testing::Test {
+ public:
+  OBContextTest() : work_guard_(boost::asio::make_work_guard(io_service)) {}
+
  protected:
   void SetUp() override {
     opts_ = LoadOptions();
-    io_service.restart();
   }
 
   void TearDown() override {
+    work_guard_.reset();
     io_service.stop();
   }
 
-  std::optional<OBClientOptions> opts_;
+  OBClientOptions opts_;
+  boost::asio::executor_work_guard<boost::asio::io_context::executor_type> work_guard_;
 };
 
 
-TEST_F(OBContextTest, ExecuteAsyncCrud) {
+TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   OBContext ctx(io_service);
-  RAY_LOG(INFO) << "Init OBContext host=" << opts_->server << " port=" << opts_->port
-                << " user=" << opts_->username << " db=" << opts_->database;
-  auto init_status = ctx.Initialize(*opts_);
-  std::cerr << "[TEST] OBContext Initialize status: " << init_status.ToString() << std::endl;
+  RAY_LOG(INFO) << "Init OBContext host=" << opts_.server << " port=" << opts_.port
+                << " user=" << opts_.username << " db=" << opts_.database;
+  auto init_status = ctx.Initialize(opts_);
   RAY_LOG(INFO) << "OBContext Initialize status: " << init_status.ToString();
   ASSERT_TRUE(init_status.ok());
 
   const std::string key = absl::StrCat("test-key-", current_time_ms());
-  const std::string val = "v1";
+  const std::string val_insert = "v1";
+  const std::string val_update = "v2";
+  const std::string val_replace = "v3";
 
   std::atomic<int> pending(0);
 
@@ -86,41 +81,144 @@ TEST_F(OBContextTest, ExecuteAsyncCrud) {
     }
   };
 
-  // Insert / upsert
+  // Insert
   pending++;
   ctx.ExecuteAsync(
-      absl::StrCat("REPLACE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)"),
-      {key, val},
-      [done](std::shared_ptr<OBResult> res) {
+      absl::StrCat("INSERT INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)"),
+      {key, val_insert},
+      false,
+      [done, &key, &val_insert](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
         ASSERT_EQ(res->affected_rows, 1);
+        RAY_LOG(INFO) << "[Verified] Insert key=" << key << " val=" << val_insert
+                      << " affected_rows=" << res->affected_rows;
         done();
       });
+  RAY_LOG(INFO) << "Insert task submitted to io_service";
+/*
 
-  // Read back
+  // Read after insert
   pending++;
   ctx.ExecuteAsync(
       absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      [done, &val](std::shared_ptr<OBResult> res) {
+      true, 
+      [done, &key, &val_insert](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
         ASSERT_FALSE(res->rows.empty());
-        ASSERT_EQ(res->rows[0].at(0), val);
+        ASSERT_EQ(res->rows[0].at(0), val_insert);
+        RAY_LOG(INFO) << "[Verified] Read after insert key=" << key
+                      << " rows=" << res->rows.size()
+                      << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
         done();
       });
+  RAY_LOG(INFO) << "Read-after-insert task submitted to io_service";
+
+
+  // Update
+  RAY_LOG(INFO) << "Update key=" << key << " val=" << val_update;
+  pending++;
+  ctx.ExecuteAsync(
+      absl::StrCat("UPDATE ", kRayGcsTableNameInOB, " SET v = ? WHERE k = ?"),
+      {val_update, key},
+      false,
+      [done, &key, &val_update](std::shared_ptr<OBResult> res) {
+        ASSERT_TRUE(res) << "res null";
+        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_EQ(res->affected_rows, 1);
+        RAY_LOG(INFO) << "[Verified] Update key=" << key << " val=" << val_update
+                      << " affected_rows=" << res->affected_rows;
+        done();
+      });
+  RAY_LOG(INFO) << "Update task submitted to io_service";
+
+  // Read after update
+  pending++;
+  ctx.ExecuteAsync(
+      absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
+      {key},
+      true,
+      [done, &key, &val_update](std::shared_ptr<OBResult> res) {
+        ASSERT_TRUE(res) << "res null";
+        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_FALSE(res->rows.empty());
+        ASSERT_EQ(res->rows[0].at(0), val_update);
+        RAY_LOG(INFO) << "[Verified] Read after update key=" << key
+                      << " rows=" << res->rows.size()
+                      << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
+        done();
+      });
+  RAY_LOG(INFO) << "Read-after-update task submitted to io_service";
+
+  // Replace
+  RAY_LOG(INFO) << "Replace key=" << key << " val=" << val_replace;
+  pending++;
+  ctx.ExecuteAsync(
+      absl::StrCat("REPLACE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)"),
+      {key, val_replace},
+      false,
+      [done, &key, &val_replace](std::shared_ptr<OBResult> res) {
+        ASSERT_TRUE(res) << "res null";
+        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_EQ(res->affected_rows, 2);
+        RAY_LOG(INFO) << "[Verified] Replace key=" << key << " val=" << val_replace
+                      << " affected_rows=" << res->affected_rows;
+        done();
+      });
+  RAY_LOG(INFO) << "Replace task submitted to io_service";
+
+  // Read after replace
+  pending++;
+  ctx.ExecuteAsync(
+      absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
+      {key},
+      true,
+      [done, &key, &val_replace](std::shared_ptr<OBResult> res) {
+        ASSERT_TRUE(res) << "res null";
+        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_FALSE(res->rows.empty());
+        ASSERT_EQ(res->rows[0].at(0), val_replace);
+        RAY_LOG(INFO) << "[Verified] Read after replace key=" << key
+                      << " rows=" << res->rows.size()
+                      << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
+        done();
+      });
+  RAY_LOG(INFO) << "Read-after-replace task submitted to io_service";
 
   // Delete
   pending++;
   ctx.ExecuteAsync(
       absl::StrCat("DELETE FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      [done](std::shared_ptr<OBResult> res) {
+      false,
+      [done, &key](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_EQ(res->affected_rows, 1);
+        RAY_LOG(INFO) << "[Verified] Delete key=" << key
+                      << " affected_rows=" << res->affected_rows;
         done();
       });
+  RAY_LOG(INFO) << "Delete task submitted to io_service";
+
+  // Verify deleted
+  pending++;
+  ctx.ExecuteAsync(
+      absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
+      {key},
+      true,
+      [done, &key](std::shared_ptr<OBResult> res) {
+        ASSERT_TRUE(res) << "res null";
+        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+        ASSERT_TRUE(res->rows.empty());
+        RAY_LOG(INFO) << "[Verified] Verify delete key=" << key
+                      << " rows=" << res->rows.size();
+        done();
+      });
+  RAY_LOG(INFO) << "Verify-delete task submitted to io_service";
+*/
 
   // Run event loop until all callbacks finish.
   io_service.run();

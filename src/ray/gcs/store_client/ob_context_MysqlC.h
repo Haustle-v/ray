@@ -1,21 +1,15 @@
 // Author: He Su
 // Email: yefengshuo.yfs@oceanbase.com
-// Create Time: 2025-12-3
+// Create Time: 2025-11-26
 
 #pragma once
+
+#include <mysql/mysql.h>
 
 #include <functional>
 #include <memory>
 #include <queue>
 #include <string>
-
-#include <mysql-cppconn/jdbc/mysql_driver.h>
-#include <mysql-cppconn/jdbc/cppconn/connection.h>
-#include <mysql-cppconn/jdbc/cppconn/exception.h>
-#include <mysql-cppconn/jdbc/cppconn/prepared_statement.h>
-#include <mysql-cppconn/jdbc/cppconn/resultset.h>
-#include <mysql-cppconn/jdbc/cppconn/resultset_metadata.h>
-#include <mysql-cppconn/jdbc/cppconn/statement.h>
 
 #include "absl/synchronization/mutex.h"
 #include "ray/common/asio/instrumented_io_context.h"
@@ -26,15 +20,23 @@
 namespace ray {
 namespace gcs {
 
+struct MysqlStmtDeleter {
+  void operator()(MYSQL_STMT* stmt) const {
+        mysql_stmt_close(stmt);
+  }
+};
+
+
+constexpr size_t kInitialColumnBufferSize = 4096;  // 4 KB
 constexpr std::string_view kRayGcsTableNameInOB = "RAY_GCS";
 constexpr std::string_view kOBKeySeparator = "@";
 
 struct OBClientOptions {
-  std::string server;
-  int port;
-  std::string username;
-  std::string password;
-  std::string database;
+  std::string server = "6.12.235.70";
+  int port = 2881;
+  std::string username = "root@sys";
+  std::string password = "YdgmkMzQHygaaU325S84";
+  std::string database = "test";
   int connection_pool_size = 12;
   int thread_pool_size = 10;
 };
@@ -59,6 +61,8 @@ struct OBKey {
   std::string TablePrefix() const {
     return absl::StrCat("RAY", external_storage_namespace, kOBKeySeparator, table_name);
   }
+
+  std::string KeyPrefix() const { return absl::StrCat(TablePrefix(), kOBKeySeparator); }
 
   std::string ComposeFullKey(const std::string &key) const {
     return absl::StrCat(TablePrefix(), key);
@@ -102,13 +106,16 @@ class OBContext {
   ///
   /// \param sql SQL statement (can contain placeholders).
   /// \param bind_params Parameters to bind (empty if no placeholders).
-  /// \param is_select Whether the SQL expects a result set.
   /// \param callback Callback to invoke with the result.
   void ExecuteAsync(
       const std::string &sql,
-      const std::vector<std::string> &bind_params,
-      bool is_select,
+      const std::vector<std::pair<std::string, int>> &bind_params,  // (value, type)
       OBCallback callback);
+
+  /// Check if the connection pool is healthy.
+  ///
+  /// \return Status indicating health.
+  Status CheckHealth();
 
   /// Get the io_service reference.
   instrumented_io_context &io_service() { return io_service_; }
@@ -116,46 +123,42 @@ class OBContext {
  private:
   /// Create a new MySQL connection.
   ///
-  /// \return sql::Connection* connection or nullptr on failure.
-  sql::Connection *CreateConnection();
+  /// \return MYSQL* connection or nullptr on failure.
+  MYSQL *CreateConnection();
 
   /// Acquire a connection from the pool.
   ///
-  /// \return sql::Connection* connection or nullptr if pool is empty and creation fails.
-  sql::Connection *AcquireConnection();
+  /// \return MYSQL* connection or nullptr if pool is empty and creation fails.
+  MYSQL *AcquireConnection();
 
   /// Release a connection back to the pool.
   ///
   /// \param conn Connection to release.
-  void ReleaseConnection(sql::Connection *conn);
+  void ReleaseConnection(MYSQL *conn);
 
   /// Execute a synchronous SQL operation.
   ///
   /// \param conn MySQL connection.
   /// \param sql SQL statement.
   /// \param bind_params Parameters to bind.
-  /// \param is_select Whether the SQL expects a result set.
   /// \return OBResult with the operation result.
   std::shared_ptr<OBResult> ExecuteSync(
-      sql::Connection *conn,
+      MYSQL *conn,
       const std::string &sql,
-      const std::vector<std::string> &bind_params,
-      bool is_select);
+      const std::vector<std::pair<std::string, int>> &bind_params);
 
   /// Validate and reconnect a connection if needed.
   ///
   /// \param conn Connection to validate.
   /// \return true if connection is valid, false otherwise.
-  bool ValidateConnection(sql::Connection *conn);
+  bool ValidateConnection(MYSQL *conn);
 
   instrumented_io_context &io_service_;
   OBClientOptions options_;
-  sql::ConnectOptionsMap conn_opts_;
   std::unique_ptr<core::BoundedExecutor> thread_pool_;
-  sql::Driver *driver_ = nullptr;
 
   absl::Mutex pool_mutex_;
-  std::queue<sql::Connection *> connection_pool_ ABSL_GUARDED_BY(pool_mutex_);
+  std::queue<MYSQL *> connection_pool_ ABSL_GUARDED_BY(pool_mutex_);
   bool initialized_ ABSL_GUARDED_BY(pool_mutex_) = false;
 };
 

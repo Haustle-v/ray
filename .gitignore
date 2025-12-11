@@ -245,5 +245,4 @@ tag-mapping.json
 .buildkite/release/custom_byod_build.rayci.yml
 
 /demo
-src/ray/gcs/store_client/ob_context_MysqlC.cc
-src/ray/gcs/store_client/ob_context_MysqlC.h
+thirdparty/mysql-connector-cpp
