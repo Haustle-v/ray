@@ -35,7 +35,7 @@ namespace gcs {
 namespace {
 
 // Keep pool sizes small to reduce connection pressure during tests.
-std::optional<OBClientOptions> LoadOptions() {
+OBClientOptions LoadOptions() {
   OBClientOptions opts;
   opts.server = "6.12.235.70";
   opts.port = 2881;

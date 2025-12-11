@@ -47,7 +47,7 @@ void OBStoreClient::AsyncPut(const std::string &table_name,
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
   bind_params.emplace_back(std::move(data));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params)};
+  OBCommand command{table_name, std::move(sql), std::move(bind_params), false};
   OBCallback ob_callback = [callback = std::move(callback)](
                                std::shared_ptr<OBResult> result) mutable {
     std::move(callback).Dispatch("OBStoreClient.AsyncPut", result->affected_rows == 1);
@@ -66,7 +66,7 @@ void OBStoreClient::AsyncGet(const std::string &table_name,
   std::vector<std::string> bind_params;
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params)};
+  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
   OBCallback ob_callback =
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         std::optional<std::string> value;
@@ -106,7 +106,7 @@ void OBStoreClient::AsyncMultiGet(
   }
 
   std::vector<std::string> request_keys(keys.begin(), keys.end());
-  OBCommand command{table_name, std::move(sql), std::move(bind_params)};
+  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
   SendOBCmdWithKeys(std::move(request_keys),
                     std::move(command),
                     [callback = std::move(callback), table_prefix = ob_key.TablePrefix()](
@@ -154,7 +154,7 @@ void OBStoreClient::AsyncBatchDelete(const std::string &table_name,
   }
 
   std::vector<std::string> request_keys(keys.begin(), keys.end());
-  OBCommand command{table_name, std::move(sql), std::move(bind_params)};
+  OBCommand command{table_name, std::move(sql), std::move(bind_params), false};
   SendOBCmdWithKeys(
       std::move(request_keys),
       std::move(command),
@@ -178,7 +178,7 @@ void OBStoreClient::AsyncExists(const std::string &table_name,
   std::vector<std::string> bind_params;
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params)};
+  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
   OBCallback ob_callback =
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         bool exists = result && result->status.ok() && !result->rows.empty();
@@ -224,18 +224,21 @@ void OBStoreClient::AsyncGetNextJobID(Postable<void(int)> callback) {
       std::vector<std::string> insert_params;
       insert_params.emplace_back(k);
       insert_params.emplace_back("0");
-      OBCommand insert_cmd{job_key.table_name, insert_sql, std::move(insert_params)};
+      OBCommand insert_cmd{
+          job_key.table_name, insert_sql, std::move(insert_params), false};
       SendOBCmdWithKeys({key}, std::move(insert_cmd), std::move(insert_callback));
     }
 
     std::vector<std::string> update_params;
     update_params.emplace_back(k);
-    OBCommand update_cmd{job_key.table_name, update_sql, std::move(update_params)};
+    OBCommand update_cmd{
+        job_key.table_name, update_sql, std::move(update_params), false};
     SendOBCmdWithKeys({key}, std::move(update_cmd), update_callback);
 
     std::vector<std::string> select_params;
     select_params.emplace_back(k);
-    OBCommand select_cmd{job_key.table_name, select_sql, std::move(select_params)};
+    OBCommand select_cmd{
+        job_key.table_name, select_sql, std::move(select_params), true};
     SendOBCmdWithKeys({key}, std::move(select_cmd), select_callback);
   }
 }
@@ -268,6 +271,7 @@ void OBStoreClient::AsyncGetKeys(const std::string &table_name,
   ob_context_->ExecuteAsync(
       sql,
       std::move(bind_params),
+      /*is_select=*/true,
       [callback = std::move(callback),
        table_prefix = ob_key.TablePrefix()](std::shared_ptr<OBResult> result) mutable {
         std::vector<std::string> keys;
@@ -295,6 +299,7 @@ void OBStoreClient::AsyncGetAll(
   ob_context_->ExecuteAsync(
       sql,
       std::move(bind_params),
+      /*is_select=*/true,
       [callback = std::move(callback),
        table_prefix = ob_key.TablePrefix()](std::shared_ptr<OBResult> result) mutable {
         absl::flat_hash_map<std::string, std::string> key_value_map;
@@ -383,6 +388,7 @@ void OBStoreClient::SendOBCmdWithKeys(std::vector<std::string> keys,
     ob_context_->ExecuteAsync(
         command.sql,
         std::move(command.bind_params),
+        command.is_select,
         [this, concurrency_keys, ob_callback = std::move(ob_callback)](
             std::shared_ptr<OBResult> result) mutable {
           if (ob_callback) {
@@ -424,6 +430,7 @@ void OBStoreClient::AsyncCheckHealth(Postable<void(Status)> callback) {
   ob_context_->ExecuteAsync(
       "SELECT 1",
       /*bind_params=*/{},
+      /*is_select=*/true,
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         Status status = Status::OK();
         if (!result || !result->status.ok() || result->rows.empty()) {
