@@ -194,8 +194,6 @@ void OBStoreClient::AsyncGetNextJobID(Postable<void(int)> callback) {
   OBKey job_key{external_storage_namespace_, table_name};
   std::string k = job_key.ComposeFullKey(key);
 
-  std::string insert_sql =
-      absl::StrCat("INSERT IGNORE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)");
   std::string update_sql = absl::StrCat(
       "UPDATE ", kRayGcsTableNameInOB, " SET v = CAST(v AS UNSIGNED) + 1 WHERE k = ?");
   std::string select_sql =
@@ -221,6 +219,8 @@ void OBStoreClient::AsyncGetNextJobID(Postable<void(int)> callback) {
     // Lock to ensure the insert-update-select is atomic, similar to the "INCR BY" in Redis.
     absl::MutexLock status_lock(&job_counter_status_mu_);
     if (!job_counter_inserted_) {
+      std::string insert_sql =
+      absl::StrCat("INSERT IGNORE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)");
       std::vector<std::string> insert_params;
       insert_params.emplace_back(k);
       insert_params.emplace_back("0");
@@ -376,14 +376,14 @@ void OBStoreClient::SendOBCmdWithKeys(std::vector<std::string> keys,
     {
       absl::MutexLock lock(&mu_);
       *num_ready_keys += 1;
-      RAY_LOG(INFO) << "Ready keys: " << *num_ready_keys
+      RAY_LOG(DEBUG) << "Ready keys: " << *num_ready_keys
                     << " / All required keys: " << concurrency_keys.size();
       RAY_CHECK(*num_ready_keys <= concurrency_keys.size());
       if (*num_ready_keys != concurrency_keys.size()) {
         return;
       }
     }
-    RAY_LOG(INFO) << *num_ready_keys << " / " << concurrency_keys.size()
+    RAY_LOG(DEBUG) << *num_ready_keys << " / " << concurrency_keys.size()
                   << " keys are ready, send the request to OB.";
     ob_context_->ExecuteAsync(
         command.sql,

@@ -254,7 +254,7 @@ class StoreClientTestBase : public ::testing::Test {
   }
 
  protected:
-  size_t io_service_num_{2};
+  size_t io_service_num_{4};
   std::shared_ptr<IOServicePool> io_service_pool_;
 
   std::shared_ptr<StoreClient> store_client_;
