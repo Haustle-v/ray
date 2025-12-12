@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
@@ -42,8 +43,8 @@ OBClientOptions LoadOptions() {
   opts.username = "root@sys";
   opts.password = "YdgmkMzQHygaaU325S84";
   opts.database = "test";
-  opts.connection_pool_size = 1;
-  opts.thread_pool_size = 1;
+  opts.connection_pool_size = 4;
+  opts.thread_pool_size = 4;
   return opts;
 }
 
@@ -163,22 +164,45 @@ TEST_F(OBStoreClientTest, OverwriteSemantics) {
 }
 
 TEST_F(OBStoreClientTest, GetNextJobIdMonotonic) {
+  int job_id_num = 2000;
   std::vector<int> results;
-  std::atomic<int> pending(3);
-  for (int i = 0; i < 3; ++i) {
-    store_client_->AsyncGetNextJobID(
-        {[&results, &pending](int job_id) {
-          results.push_back(job_id);
-          --pending;
-        },
-         *io_service_pool_->Get()});
+  std::mutex results_mutex; 
+  std::atomic<int> pending(job_id_num);
+  
+  std::chrono::steady_clock::time_point start_time;
+  std::chrono::steady_clock::time_point end_time;
+  
+  std::vector<std::thread> threads;
+  int thread_num = 4;
+  for (int t = 0; t < thread_num; ++t) {
+      threads.emplace_back([&] {
+        for (int i = 0; i < job_id_num / thread_num; ++i) {
+          store_client_->AsyncGetNextJobID(
+              {[&](int job_id) {
+                  std::lock_guard<std::mutex> lock(results_mutex);
+                  results.push_back(job_id);
+                  int pending_num_before_sub = pending.fetch_sub(1);
+                  if (pending_num_before_sub == job_id_num) {
+                    start_time = std::chrono::steady_clock::now();
+                  } else if (pending_num_before_sub == 1) {
+                    end_time = std::chrono::steady_clock::now();
+                    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+                    RAY_LOG(INFO) << "Duration: " << duration_ms << " ms for " << job_id_num << " jobs";
+                    RAY_LOG(INFO) << "Average time per job: " << duration_ms / job_id_num << " ms";
+                  }
+              },
+               *io_service_pool_->Get()});
+        }
+      });
   }
-  ASSERT_TRUE(WaitForCondition([&pending]() { return pending == 0; }, 20000));
-  ASSERT_EQ(results.size(), 3u);
-  std::sort(results.begin(), results.end());
+  for (auto& thread : threads) thread.join();
+  
+  ASSERT_TRUE(WaitForCondition([&pending]() { return pending == 0; }, 60000));
+  ASSERT_EQ(results.size(), job_id_num);
+  ASSERT_EQ(results[0], 1);
+  ASSERT_EQ(results[results.size() - 1], job_id_num);
   for (size_t i = 1; i < results.size(); ++i) {
-    ASSERT_GE(results[i], results[i - 1]);
-    ASSERT_LE(results[i] - results[i - 1], 1);
+    ASSERT_EQ(results[i], results[i - 1] + 1);
   }
 }
 

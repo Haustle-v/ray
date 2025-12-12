@@ -111,7 +111,7 @@ Status OBContext::Initialize(const OBClientOptions &options) {
 
   initialized_ = true;
   RAY_LOG(INFO) << "OBContext initialized with " << options_.connection_pool_size
-                << " connections";
+                << " database connections";
 
   io_service_pool_ = std::make_unique<IOServicePool>(options_.thread_pool_size);
   io_service_pool_->Run();
@@ -189,26 +189,19 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
   }
 
   try {
-    RAY_LOG(INFO) << "Executing SQL: " << sql;
     std::unique_ptr<sql::PreparedStatement> stmt(conn->prepareStatement(sql));
-    RAY_LOG(INFO) << "Binding params: " << absl::StrJoin(bind_params, ", ");
     for (size_t i = 0; i < bind_params.size(); ++i) {
       const auto &value = bind_params[i];
       stmt->setString(static_cast<int>(i + 1),
                       sql::SQLString(value.data(), value.size()));
     }
 
-    RAY_LOG(INFO) << "Executing statement...";
     if (!is_select) {
       result->affected_rows = stmt->executeUpdate();
-      RAY_LOG(INFO) << "Statement executed as update, affected_rows="
-                    << result->affected_rows;
       return result;
     }
 
-    RAY_LOG(INFO) << "Executing query and fetching ResultSet";
     std::unique_ptr<sql::ResultSet> res(stmt->executeQuery());
-    RAY_LOG(INFO) << "ResultSet got";
     if (!res) {
       RAY_LOG(WARNING) << "Statement executed with no ResultSet, return";
       return result;
@@ -256,9 +249,7 @@ void OBContext::ExecuteAsync(
        bind_params,
        is_select,
        callback = std::move(callback)]() mutable {
-    RAY_LOG(INFO) << "Acquiring connection";
     sql::Connection *conn = AcquireConnection();
-    RAY_LOG(INFO) << "Connection acquired";
     auto result = ExecuteSync(conn, sql, bind_params, is_select);
     ReleaseConnection(conn);
 
