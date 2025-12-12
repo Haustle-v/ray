@@ -146,6 +146,7 @@ ray_cc_test(
     tags = ["team:core"],
     deps = [
         ":store_client_test_lib",
+        "//src/ray/util:raii",
         "//src/ray/gcs/store_client:ob_store_client",
         "@com_google_googletest//:gtest_main",
     ],
