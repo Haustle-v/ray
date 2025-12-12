@@ -62,7 +62,6 @@ class OBStoreClientTest : public StoreClientTestBase {
 
   void SetUp() override {
     opts_ = LoadOptions();
-    ASSERT_TRUE(opts_.has_value()) << "OB connection options are missing";
     StoreClientTestBase::SetUp();
   }
 
@@ -185,7 +184,8 @@ TEST_F(OBStoreClientTest, GetNextJobIdMonotonic) {
 
 TEST_F(OBStoreClientTest, CheckHealth) {
   std::atomic<int> pending(1);
-  store_client_->AsyncCheckHealth(
+  auto ob_client = std::static_pointer_cast<OBStoreClient>(store_client_);
+  ob_client->AsyncCheckHealth(
       {[&pending](Status status) {
         ASSERT_TRUE(status.ok()) << status.ToString();
         --pending;

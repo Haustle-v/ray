@@ -28,11 +28,11 @@ instrumented_io_context io_service;
 
 OBClientOptions LoadOptions() {
   OBClientOptions opts;
-  opts.server = "6.12.235.70";
+  opts.server = "your_server_ip";
   opts.port = 2881;
-  opts.username = "root@sys";
-  opts.password = "YdgmkMzQHygaaU325S84";
-  opts.database = "test";
+  opts.username = "your_username";
+  opts.password = "your_password";
+  opts.database = "your_database";
   // Keep pools minimal to reduce connection pressure during test.
   opts.connection_pool_size = 1;
   opts.thread_pool_size = 1;

@@ -22,9 +22,8 @@ OBContext::OBContext(instrumented_io_context &io_service) : io_service_(io_servi
 }
 
 OBContext::~OBContext() {
-  if (thread_pool_) {
-    thread_pool_->Stop();
-    thread_pool_->Join();
+  if (io_service_pool_) {
+    io_service_pool_->Stop();
   }
 
   {
@@ -114,10 +113,10 @@ Status OBContext::Initialize(const OBClientOptions &options) {
   RAY_LOG(INFO) << "OBContext initialized with " << options_.connection_pool_size
                 << " connections";
 
-  thread_pool_ = std::make_unique<core::BoundedExecutor>(
-      options_.thread_pool_size, nullptr, boost::chrono::milliseconds(10000));
-  RAY_LOG(INFO) << "OBContext thread pool created with " << options_.thread_pool_size
-                << " threads";
+  io_service_pool_ = std::make_unique<IOServicePool>(options_.thread_pool_size);
+  io_service_pool_->Run();
+  RAY_LOG(INFO) << "OBContext IOServicePool created with "
+                << options_.thread_pool_size << " workers";
 
   return Status::OK();
 }
@@ -250,11 +249,13 @@ void OBContext::ExecuteAsync(
     const std::vector<std::string> &bind_params,
     bool is_select,
     OBCallback callback) {
-  thread_pool_->Post([this,
-                      sql,
-                      bind_params,
-                      is_select,
-                      callback = std::move(callback)]() mutable {
+  instrumented_io_context *worker = io_service_pool_->Get();
+  worker->post(
+      [this,
+       sql,
+       bind_params,
+       is_select,
+       callback = std::move(callback)]() mutable {
     RAY_LOG(INFO) << "Acquiring connection";
     sql::Connection *conn = AcquireConnection();
     RAY_LOG(INFO) << "Connection acquired";
@@ -267,7 +268,8 @@ void OBContext::ExecuteAsync(
           callback(std::move(result));
         },
         "OBContext.ExecuteAsync");
-  });
+      },
+      "OBContext.ExecuteAsyncWorker");
 }
 
 }  // namespace gcs

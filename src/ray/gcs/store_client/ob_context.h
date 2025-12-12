@@ -20,7 +20,7 @@
 #include "absl/synchronization/mutex.h"
 #include "ray/common/asio/instrumented_io_context.h"
 #include "ray/common/status.h"
-#include "ray/core_worker/task_execution/thread_pool.h"
+#include "ray/common/asio/io_service_pool.h"
 
 
 namespace ray {
@@ -142,16 +142,11 @@ class OBContext {
       const std::vector<std::string> &bind_params,
       bool is_select);
 
-  /// Validate and reconnect a connection if needed.
-  ///
-  /// \param conn Connection to validate.
-  /// \return true if connection is valid, false otherwise.
-  bool ValidateConnection(sql::Connection *conn);
 
   instrumented_io_context &io_service_;
   OBClientOptions options_;
   sql::ConnectOptionsMap conn_opts_;
-  std::unique_ptr<core::BoundedExecutor> thread_pool_;
+  std::unique_ptr<IOServicePool> io_service_pool_;
   sql::Driver *driver_ = nullptr;
 
   absl::Mutex pool_mutex_;

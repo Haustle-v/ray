@@ -73,11 +73,11 @@ struct GcsServerConfig {
   std::string raylet_config_list;
   std::string session_name;
   // OceanBase configuration
-  std::string ob_address = "6.12.235.70";
+  std::string ob_address = "your_server_ip";
   uint16_t ob_port = 2881;
-  std::string ob_username = "root@sys";
-  std::string ob_password = "YdgmkMzQHygaaU325S84";
-  std::string ob_database = "test";
+  std::string ob_username = "your_username";
+  std::string ob_password = "your_password";
+  std::string ob_database = "your_database";
   int ob_connection_pool_size = 12;
   int ob_thread_pool_size = 10;
 };
