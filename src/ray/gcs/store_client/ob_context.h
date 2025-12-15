@@ -4,24 +4,23 @@
 
 #pragma once
 
-#include <functional>
-#include <memory>
-#include <queue>
-#include <string>
-
-#include <mysql-cppconn/jdbc/mysql_driver.h>
 #include <mysql-cppconn/jdbc/cppconn/connection.h>
 #include <mysql-cppconn/jdbc/cppconn/exception.h>
 #include <mysql-cppconn/jdbc/cppconn/prepared_statement.h>
 #include <mysql-cppconn/jdbc/cppconn/resultset.h>
 #include <mysql-cppconn/jdbc/cppconn/resultset_metadata.h>
 #include <mysql-cppconn/jdbc/cppconn/statement.h>
+#include <mysql-cppconn/jdbc/mysql_driver.h>
+
+#include <functional>
+#include <memory>
+#include <queue>
+#include <string>
 
 #include "absl/synchronization/mutex.h"
 #include "ray/common/asio/instrumented_io_context.h"
-#include "ray/common/status.h"
 #include "ray/common/asio/io_service_pool.h"
-
+#include "ray/common/status.h"
 
 namespace ray {
 namespace gcs {
@@ -51,7 +50,6 @@ struct OBResult {
 
 using OBCallback = std::function<void(std::shared_ptr<OBResult>)>;
 
-
 struct OBKey {
   std::string external_storage_namespace;
   std::string table_name;
@@ -68,7 +66,6 @@ struct OBKey {
   std::string ComposePrefix(const std::string &key_prefix) const {
     return absl::StrCat(TablePrefix(), key_prefix);
   }
-
 };
 
 // Typed key for concurrency control.
@@ -104,11 +101,10 @@ class OBContext {
   /// \param bind_params Parameters to bind (empty if no placeholders).
   /// \param is_select Whether the SQL expects a result set.
   /// \param callback Callback to invoke with the result.
-  void ExecuteAsync(
-      const std::string &sql,
-      const std::vector<std::string> &bind_params,
-      bool is_select,
-      OBCallback callback);
+  void ExecuteAsync(const std::string &sql,
+                    const std::vector<std::string> &bind_params,
+                    bool is_select,
+                    OBCallback callback);
 
   /// Get the io_service reference.
   instrumented_io_context &io_service() { return io_service_; }
@@ -136,12 +132,10 @@ class OBContext {
   /// \param bind_params Parameters to bind.
   /// \param is_select Whether the SQL expects a result set.
   /// \return OBResult with the operation result.
-  std::shared_ptr<OBResult> ExecuteSync(
-      sql::Connection *conn,
-      const std::string &sql,
-      const std::vector<std::string> &bind_params,
-      bool is_select);
-
+  std::shared_ptr<OBResult> ExecuteSync(sql::Connection *conn,
+                                        const std::string &sql,
+                                        const std::vector<std::string> &bind_params,
+                                        bool is_select);
 
   instrumented_io_context &io_service_;
   OBClientOptions options_;
@@ -156,4 +150,3 @@ class OBContext {
 
 }  // namespace gcs
 }  // namespace ray
-
