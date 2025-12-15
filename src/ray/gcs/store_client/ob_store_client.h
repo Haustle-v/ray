@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <gtest/gtest_prod.h>
+
 #include <memory>
 #include <queue>
 #include <string>
@@ -24,8 +26,6 @@
 
 namespace ray {
 namespace gcs {
-
-
 
 inline std::ostream &operator<<(std::ostream &os, const OBConcurrencyKey &key) {
   os << "{" << key.table_name << ", " << key.key << "}";
@@ -129,8 +129,8 @@ class OBStoreClient : public StoreClient {
   /// \param command OB command to send.
   /// \param callback Callback invoked with the execution result.
   void SendOBCmdWithKeys(std::vector<std::string> keys,
-                             OBCommand command,
-                             OBCallback callback);
+                         OBCommand command,
+                         OBCallback callback);
 
   instrumented_io_context &io_service_;
   OBClientOptions options_;
@@ -142,8 +142,8 @@ class OBStoreClient : public StoreClient {
       pending_ob_request_by_key_ ABSL_GUARDED_BY(mu_);
   absl::Mutex job_counter_status_mu_;
   bool job_counter_inserted_ = false;
+  FRIEND_TEST(OBStoreClientTest, Random);
 };
 
 }  // namespace gcs
 }  // namespace ray
-

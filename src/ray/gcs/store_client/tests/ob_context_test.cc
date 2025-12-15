@@ -5,19 +5,19 @@
 #include "ray/gcs/store_client/ob_context.h"
 
 #include <atomic>
+#include <boost/asio/executor_work_guard.hpp>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include <boost/asio/executor_work_guard.hpp>
 #include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 #include "ray/common/asio/instrumented_io_context.h"
 #include "ray/common/test_utils.h"
 #include "ray/util/logging.h"
+#include "ray/util/path_utils.h"
 #include "ray/util/raii.h"
 #include "ray/util/time.h"
-#include "ray/util/path_utils.h"
 
 namespace ray {
 namespace gcs {
@@ -46,9 +46,7 @@ class OBContextTest : public ::testing::Test {
   OBContextTest() : work_guard_(boost::asio::make_work_guard(io_service)) {}
 
  protected:
-  void SetUp() override {
-    opts_ = LoadOptions();
-  }
+  void SetUp() override { opts_ = LoadOptions(); }
 
   void TearDown() override {
     work_guard_.reset();
@@ -58,7 +56,6 @@ class OBContextTest : public ::testing::Test {
   OBClientOptions opts_;
   boost::asio::executor_work_guard<boost::asio::io_context::executor_type> work_guard_;
 };
-
 
 TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   OBContext ctx(io_service);
@@ -102,19 +99,19 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      true, 
+      true,
       [done, &key, &val_insert](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
         ASSERT_FALSE(res->rows.empty()) << "select after insert returned empty rows";
-        ASSERT_EQ(res->rows[0].at(0), val_insert) << "select after insert got wrong value";
+        ASSERT_EQ(res->rows[0].at(0), val_insert)
+            << "select after insert got wrong value";
         RAY_LOG(INFO) << "[Verified] Read after insert key=" << key
                       << " rows=" << res->rows.size()
                       << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
         done();
       });
   RAY_LOG(INFO) << "Read-after-insert task submitted to io_service";
-
 
   // Update
   RAY_LOG(INFO) << "Update key=" << key << " val=" << val_update;
@@ -143,7 +140,8 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
         ASSERT_FALSE(res->rows.empty()) << "select after update returned empty rows";
-        ASSERT_EQ(res->rows[0].at(0), val_update) << "select after update got wrong value";
+        ASSERT_EQ(res->rows[0].at(0), val_update)
+            << "select after update got wrong value";
         RAY_LOG(INFO) << "[Verified] Read after update key=" << key
                       << " rows=" << res->rows.size()
                       << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
@@ -161,7 +159,8 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
       [done, &key, &val_replace](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
-        ASSERT_EQ(res->affected_rows, 2) << "affected_rows should be 2 in the replace sql";
+        ASSERT_EQ(res->affected_rows, 2)
+            << "affected_rows should be 2 in the replace sql";
         RAY_LOG(INFO) << "[Verified] Replace key=" << key << " val=" << val_replace
                       << " affected_rows=" << res->affected_rows;
         done();
@@ -178,7 +177,8 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
         ASSERT_FALSE(res->rows.empty()) << "select after replace returned empty rows";
-        ASSERT_EQ(res->rows[0].at(0), val_replace) << "select after replace got wrong value";
+        ASSERT_EQ(res->rows[0].at(0), val_replace)
+            << "select after replace got wrong value";
         RAY_LOG(INFO) << "[Verified] Read after replace key=" << key
                       << " rows=" << res->rows.size()
                       << " first_val=" << (res->rows.empty() ? "" : res->rows[0].at(0));
@@ -188,34 +188,34 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
 
   // Delete
   pending++;
-  ctx.ExecuteAsync(
-      absl::StrCat("DELETE FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
-      {key},
-      false,
-      [done, &key](std::shared_ptr<OBResult> res) {
-        ASSERT_TRUE(res) << "res null";
-        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
-        ASSERT_EQ(res->affected_rows, 1) << "affected_rows should be 1 in the delete sql";
-        RAY_LOG(INFO) << "[Verified] Delete key=" << key
-                      << " affected_rows=" << res->affected_rows;
-        done();
-      });
+  ctx.ExecuteAsync(absl::StrCat("DELETE FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
+                   {key},
+                   false,
+                   [done, &key](std::shared_ptr<OBResult> res) {
+                     ASSERT_TRUE(res) << "res null";
+                     ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+                     ASSERT_EQ(res->affected_rows, 1)
+                         << "affected_rows should be 1 in the delete sql";
+                     RAY_LOG(INFO) << "[Verified] Delete key=" << key
+                                   << " affected_rows=" << res->affected_rows;
+                     done();
+                   });
   RAY_LOG(INFO) << "Delete task submitted to io_service";
 
   // Verify deleted
   pending++;
-  ctx.ExecuteAsync(
-      absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
-      {key},
-      true,
-      [done, &key](std::shared_ptr<OBResult> res) {
-        ASSERT_TRUE(res) << "res null";
-        ASSERT_TRUE(res->status.ok()) << res->status.ToString();
-        ASSERT_TRUE(res->rows.empty()) << "select after delete should return empty rows";
-        RAY_LOG(INFO) << "[Verified] Verify delete key=" << key
-                      << " rows=" << res->rows.size();
-        done();
-      });
+  ctx.ExecuteAsync(absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
+                   {key},
+                   true,
+                   [done, &key](std::shared_ptr<OBResult> res) {
+                     ASSERT_TRUE(res) << "res null";
+                     ASSERT_TRUE(res->status.ok()) << res->status.ToString();
+                     ASSERT_TRUE(res->rows.empty())
+                         << "select after delete should return empty rows";
+                     RAY_LOG(INFO) << "[Verified] Verify delete key=" << key
+                                   << " rows=" << res->rows.size();
+                     done();
+                   });
   RAY_LOG(INFO) << "Verify-delete task submitted to io_service";
 
   // Run event loop until all callbacks finish.
@@ -239,4 +239,3 @@ int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-

@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "ray/util/logging.h"
 #include "absl/strings/str_cat.h"
+#include "ray/util/logging.h"
 
 namespace ray {
 namespace gcs {
@@ -115,8 +115,8 @@ Status OBContext::Initialize(const OBClientOptions &options) {
 
   io_service_pool_ = std::make_unique<IOServicePool>(options_.thread_pool_size);
   io_service_pool_->Run();
-  RAY_LOG(INFO) << "OBContext IOServicePool created with "
-                << options_.thread_pool_size << " workers";
+  RAY_LOG(INFO) << "OBContext IOServicePool created with " << options_.thread_pool_size
+                << " workers";
 
   return Status::OK();
 }
@@ -126,18 +126,18 @@ sql::Connection *OBContext::CreateConnection() {
     driver_ = sql::mysql::get_mysql_driver_instance();
   }
   try {
-    RAY_LOG(INFO) << "Creating database connection with uri=" << absl::StrCat("tcp://", options_.server, ":", options_.port);
+    RAY_LOG(INFO) << "Creating database connection with uri="
+                  << absl::StrCat("tcp://", options_.server, ":", options_.port);
     conn_opts_["hostName"] = absl::StrCat(options_.server, ":", options_.port);
     conn_opts_["userName"] = options_.username;
     conn_opts_["password"] = options_.password;
     // Disable OTel in libmysqlcppconn to avoid symbol conflicts with OTel in Ray.
     conn_opts_["OPT_OPENTELEMETRY"] = sql::OTEL_DISABLED;
-    sql::Connection* conn = driver_->connect(conn_opts_);
+    sql::Connection *conn = driver_->connect(conn_opts_);
     conn->setSchema(options_.database);
     return conn;
   } catch (const sql::SQLException &e) {
-    RAY_LOG(ERROR) << "Connection failed: " << e.what()
-                   << " (code=" << e.getErrorCode()
+    RAY_LOG(ERROR) << "Connection failed: " << e.what() << " (code=" << e.getErrorCode()
                    << ", state=" << e.getSQLState() << ")";
     return nullptr;
   }
@@ -152,8 +152,8 @@ sql::Connection *OBContext::AcquireConnection() {
 
     if (!conn->isValid()) {
       conn->reconnect();
-    } 
-      
+    }
+
     if (conn->isValid()) {
       return conn;
     } else {
@@ -222,14 +222,18 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
       }
       result->rows.push_back(std::move(row));
     }
-    
+
   } catch (const sql::SQLException &e) {
-    result->status = Status::IOError(
-        absl::StrCat("MySQL error: ", e.what(), " (code=", e.getErrorCode(),
-                     ", state=", e.getSQLState(), ")"));
+    result->status = Status::IOError(absl::StrCat("MySQL error: ",
+                                                  e.what(),
+                                                  " (code=",
+                                                  e.getErrorCode(),
+                                                  ", state=",
+                                                  e.getSQLState(),
+                                                  ")"));
   } catch (const std::exception &e) {
-    result->status = Status::IOError(
-        absl::StrCat("Standard exception: ", std::string(e.what())));
+    result->status =
+        Status::IOError(absl::StrCat("Standard exception: ", std::string(e.what())));
   } catch (...) {
     result->status = Status::IOError("Unknown exception in ExecuteSync");
   }
@@ -237,32 +241,26 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
   return result;
 }
 
-void OBContext::ExecuteAsync(
-    const std::string &sql,
-    const std::vector<std::string> &bind_params,
-    bool is_select,
-    OBCallback callback) {
+void OBContext::ExecuteAsync(const std::string &sql,
+                             const std::vector<std::string> &bind_params,
+                             bool is_select,
+                             OBCallback callback) {
   instrumented_io_context *worker = io_service_pool_->Get();
   worker->post(
-      [this,
-       sql,
-       bind_params,
-       is_select,
-       callback = std::move(callback)]() mutable {
-    sql::Connection *conn = AcquireConnection();
-    auto result = ExecuteSync(conn, sql, bind_params, is_select);
-    ReleaseConnection(conn);
+      [this, sql, bind_params, is_select, callback = std::move(callback)]() mutable {
+        sql::Connection *conn = AcquireConnection();
+        auto result = ExecuteSync(conn, sql, bind_params, is_select);
+        ReleaseConnection(conn);
 
-    // Post callback to io_service
-    io_service_.post(
-        [callback = std::move(callback), result = std::move(result)]() mutable {
-          callback(std::move(result));
-        },
-        "OBContext.ExecuteAsync");
+        // Post callback to io_service
+        io_service_.post(
+            [callback = std::move(callback), result = std::move(result)]() mutable {
+              callback(std::move(result));
+            },
+            "OBContext.ExecuteAsync");
       },
       "OBContext.ExecuteAsyncWorker");
 }
 
 }  // namespace gcs
 }  // namespace ray
-
