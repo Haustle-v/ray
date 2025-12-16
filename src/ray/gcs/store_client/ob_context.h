@@ -12,6 +12,7 @@
 #include <mysql-cppconn/jdbc/cppconn/statement.h>
 #include <mysql-cppconn/jdbc/mysql_driver.h>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <queue>
@@ -38,12 +39,16 @@ struct OBClientOptions {
   int thread_pool_size = 10;
 };
 
+enum class OBExecuteType { kQuery, kUpdate, kGetNextJobID };
+
 /// Result of an OB operation.
 struct OBResult {
+  // Default to OK
   Status status;
+  // Updated rows count
   int64_t affected_rows = 0;
-  std::vector<std::vector<std::string>> rows;  // Query results
-
+  // Query results
+  std::vector<std::vector<std::string>> rows;
   OBResult() : status(Status::OK()) {}
   OBResult(Status s) : status(std::move(s)) {}
 };
@@ -99,15 +104,27 @@ class OBContext {
   ///
   /// \param sql SQL statement (can contain placeholders).
   /// \param bind_params Parameters to bind (empty if no placeholders).
-  /// \param is_select Whether the SQL expects a result set.
+  /// \param execute_type Query / Update / GetNextJobID.
   /// \param callback Callback to invoke with the result.
   void ExecuteAsync(const std::string &sql,
                     const std::vector<std::string> &bind_params,
-                    bool is_select,
+                    OBExecuteType execute_type,
                     OBCallback callback);
+
+  void SetJobCounterKey(std::string external_storage_namespace_) {
+    OBKey ob_key{external_storage_namespace_, job_counter_table_name};
+    job_counter_k_ = ob_key.ComposeFullKey(job_counter_key);
+  }
+
+  int LoadJobId() const { return current_job_id_.load(); }
+  void StoreJobId(int v) { current_job_id_.store(v); }
 
   /// Get the io_service reference.
   instrumented_io_context &io_service() { return io_service_; }
+
+  std::string job_counter_table_name = "JobCounter";
+  std::string job_counter_key = "counter";
+  std::string job_counter_k_;
 
  private:
   /// Create a new MySQL connection.
@@ -134,8 +151,8 @@ class OBContext {
   /// \return OBResult with the operation result.
   std::shared_ptr<OBResult> ExecuteSync(sql::Connection *conn,
                                         const std::string &sql,
-                                        const std::vector<std::string> &bind_params,
-                                        bool is_select);
+                                        std::vector<std::string> bind_params,
+                                        OBExecuteType execute_type);
 
   instrumented_io_context &io_service_;
   OBClientOptions options_;
@@ -146,6 +163,9 @@ class OBContext {
   absl::Mutex pool_mutex_;
   std::queue<sql::Connection *> connection_pool_ ABSL_GUARDED_BY(pool_mutex_);
   bool initialized_ ABSL_GUARDED_BY(pool_mutex_) = false;
+  // The current_job_id_ doesn't need a lock, because the operations to it will be
+  // executed one-by-one through the pending_ob_request_by_key_
+  std::atomic<int> current_job_id_{0};
 };
 
 }  // namespace gcs

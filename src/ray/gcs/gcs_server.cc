@@ -32,9 +32,9 @@
 #include "ray/gcs/gcs_worker_manager.h"
 #include "ray/gcs/grpc_services.h"
 #include "ray/gcs/store_client/in_memory_store_client.h"
-#include "ray/gcs/store_client/observable_store_client.h"
 #include "ray/gcs/store_client/ob_context.h"
 #include "ray/gcs/store_client/ob_store_client.h"
+#include "ray/gcs/store_client/observable_store_client.h"
 #include "ray/gcs/store_client/redis_store_client.h"
 #include "ray/gcs/store_client/store_client.h"
 #include "ray/gcs/store_client_kv.h"
@@ -670,8 +670,7 @@ void GcsServer::InitKVManager() {
         std::make_unique<RedisStoreClient>(io_context, GetRedisClientOptions());
     break;
   case (StorageType::OB_PERSIST):
-    store_client =
-        std::make_unique<OBStoreClient>(io_context, GetOBClientOptions());
+    store_client = std::make_unique<OBStoreClient>(io_context, GetOBClientOptions());
     break;
   case (StorageType::IN_MEMORY):
     store_client = std::make_unique<ObservableStoreClient>(

@@ -363,7 +363,6 @@ TEST_F(OBStoreClientTest, Random) {
 TEST_F(OBStoreClientTest, GetNextJobID) {
   int job_id_num = 2000;
   std::vector<int> results;
-  std::mutex results_mutex;
   std::atomic<int> pending(job_id_num);
   std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
@@ -373,10 +372,8 @@ TEST_F(OBStoreClientTest, GetNextJobID) {
     threads.emplace_back([&] {
       for (int i = 0; i < job_id_num / thread_num; ++i) {
         store_client_->AsyncGetNextJobID({[&](int job_id) {
-                                            pending.fetch_sub(1);
-                                            std::lock_guard<std::mutex> lock(
-                                                results_mutex);
                                             results.push_back(job_id);
+                                            pending.fetch_sub(1);
                                           },
                                           *io_service_pool_->Get()});
       }

@@ -181,18 +181,18 @@ repos:
     hooks:
       - id: clang-format
 
-  - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-    rev: v2.11.0
-    hooks:
-      - id: pretty-format-java
-        args: [--autofix, --google-java-formatter-version=1.7]
-        exclude: |
-          (?x)^(
-            java/api/src/main/java/io/ray/api/ActorCall.java|
-            java/api/src/main/java/io/ray/api/CppActorCall.java|
-            java/api/src/main/java/io/ray/api/PyActorCall.java|
-            java/api/src/main/java/io/ray/api/RayCall.java
-          )
+  # - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  #   rev: v2.11.0
+  #   hooks:
+  #     - id: pretty-format-java
+  #       args: [--autofix, --google-java-formatter-version=1.7]
+  #       exclude: |
+  #         (?x)^(
+  #           java/api/src/main/java/io/ray/api/ActorCall.java|
+  #           java/api/src/main/java/io/ray/api/CppActorCall.java|
+  #           java/api/src/main/java/io/ray/api/PyActorCall.java|
+  #           java/api/src/main/java/io/ray/api/RayCall.java
+  #         )
 
   - repo: local
     hooks:

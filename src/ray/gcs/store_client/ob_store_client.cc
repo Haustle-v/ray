@@ -25,6 +25,7 @@ OBStoreClient::OBStoreClient(instrumented_io_context &io_service,
       options_(options),
       external_storage_namespace_(::RayConfig::instance().external_storage_namespace()) {
   ob_context_ = std::make_shared<OBContext>(io_service);
+  ob_context_->SetJobCounterKey(external_storage_namespace_);
   RAY_CHECK_OK(ob_context_->Initialize(options_)) << "Failed to initialize OBContext.";
 }
 
@@ -47,7 +48,8 @@ void OBStoreClient::AsyncPut(const std::string &table_name,
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
   bind_params.emplace_back(std::move(data));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params), false};
+  OBCommand command{
+      table_name, std::move(sql), std::move(bind_params), OBExecuteType::kUpdate};
   OBCallback ob_callback = [callback = std::move(callback)](
                                std::shared_ptr<OBResult> result) mutable {
     std::move(callback).Dispatch("OBStoreClient.AsyncPut", result->affected_rows == 1);
@@ -66,7 +68,8 @@ void OBStoreClient::AsyncGet(const std::string &table_name,
   std::vector<std::string> bind_params;
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
+  OBCommand command{
+      table_name, std::move(sql), std::move(bind_params), OBExecuteType::kQuery};
   OBCallback ob_callback =
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         std::optional<std::string> value;
@@ -106,7 +109,8 @@ void OBStoreClient::AsyncMultiGet(
   }
 
   std::vector<std::string> request_keys(keys.begin(), keys.end());
-  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
+  OBCommand command{
+      table_name, std::move(sql), std::move(bind_params), OBExecuteType::kQuery};
   SendOBCmdWithKeys(std::move(request_keys),
                     std::move(command),
                     [callback = std::move(callback), table_prefix = ob_key.TablePrefix()](
@@ -154,7 +158,8 @@ void OBStoreClient::AsyncBatchDelete(const std::string &table_name,
   }
 
   std::vector<std::string> request_keys(keys.begin(), keys.end());
-  OBCommand command{table_name, std::move(sql), std::move(bind_params), false};
+  OBCommand command{
+      table_name, std::move(sql), std::move(bind_params), OBExecuteType::kUpdate};
   SendOBCmdWithKeys(
       std::move(request_keys),
       std::move(command),
@@ -178,7 +183,8 @@ void OBStoreClient::AsyncExists(const std::string &table_name,
   std::vector<std::string> bind_params;
   bind_params.emplace_back(ob_key.ComposeFullKey(key));
 
-  OBCommand command{table_name, std::move(sql), std::move(bind_params), true};
+  OBCommand command{
+      table_name, std::move(sql), std::move(bind_params), OBExecuteType::kQuery};
   OBCallback ob_callback =
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         bool exists = result && result->status.ok() && !result->rows.empty();
@@ -189,58 +195,27 @@ void OBStoreClient::AsyncExists(const std::string &table_name,
 }
 
 void OBStoreClient::AsyncGetNextJobID(Postable<void(int)> callback) {
-  std::string table_name = "JobCounter";
-  std::string key = "counter";
-  OBKey job_key{external_storage_namespace_, table_name};
-  std::string k = job_key.ComposeFullKey(key);
+  std::string sql =
+      absl::StrCat("UPDATE ",
+                   kRayGcsTableNameInOB,
+                   " SET v = CAST(v AS UNSIGNED) + 1 WHERE k = ? and v = ?");
 
-  std::string update_sql = absl::StrCat(
-      "UPDATE ", kRayGcsTableNameInOB, " SET v = CAST(v AS UNSIGNED) + 1 WHERE k = ?");
-  std::string select_sql =
-      absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ? LIMIT 1");
-
-  OBCallback insert_callback = [this](std::shared_ptr<OBResult> result) mutable {
-    job_counter_inserted_ = true;
-  };
-
-  OBCallback update_callback = [this](std::shared_ptr<OBResult> result) mutable {};
-
-  OBCallback select_callback =
-      [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
-        if (result && result->status.ok() && !result->rows.empty()) {
-          int job_id = std::stoi(result->rows[0][0]);
-          std::move(callback).Dispatch("OBStoreClient.AsyncGetNextJobID", job_id);
-        } else {
-          std::move(callback).Dispatch("OBStoreClient.AsyncGetNextJobID", -1);
-        }
+  OBCallback ob_callback =
+      [this, callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
+        RAY_CHECK_OK(result->status);
+        std::move(callback).Dispatch("OBStoreClient.AsyncGetNextJobID",
+                                     std::stoi(result->rows[0][0]));
       };
 
-  {
-    // Lock to ensure the insert-update-select is atomic, similar to the "INCR BY" in Redis.
-    absl::MutexLock status_lock(&job_counter_status_mu_);
-    if (!job_counter_inserted_) {
-      std::string insert_sql =
-      absl::StrCat("INSERT IGNORE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)");
-      std::vector<std::string> insert_params;
-      insert_params.emplace_back(k);
-      insert_params.emplace_back("0");
-      OBCommand insert_cmd{
-          job_key.table_name, insert_sql, std::move(insert_params), false};
-      SendOBCmdWithKeys({key}, std::move(insert_cmd), std::move(insert_callback));
-    }
+  // job_counter_v will be passed to bind_params in the ExecuteSync
+  std::vector<std::string> bind_params;
+  bind_params.emplace_back(ob_context_->job_counter_k_);
 
-    std::vector<std::string> update_params;
-    update_params.emplace_back(k);
-    OBCommand update_cmd{
-        job_key.table_name, update_sql, std::move(update_params), false};
-    SendOBCmdWithKeys({key}, std::move(update_cmd), update_callback);
-
-    std::vector<std::string> select_params;
-    select_params.emplace_back(k);
-    OBCommand select_cmd{
-        job_key.table_name, select_sql, std::move(select_params), true};
-    SendOBCmdWithKeys({key}, std::move(select_cmd), select_callback);
-  }
+  OBCommand command{ob_context_->job_counter_table_name,
+                    std::move(sql),
+                    std::move(bind_params),
+                    OBExecuteType::kGetNextJobID};
+  SendOBCmdWithKeys({ob_context_->job_counter_key}, std::move(command), ob_callback);
 }
 
 std::string OBStoreClient::EscapeLikePattern(const std::string &pattern) const {
@@ -271,7 +246,7 @@ void OBStoreClient::AsyncGetKeys(const std::string &table_name,
   ob_context_->ExecuteAsync(
       sql,
       std::move(bind_params),
-      /*is_select=*/true,
+      OBExecuteType::kQuery,
       [callback = std::move(callback),
        table_prefix = ob_key.TablePrefix()](std::shared_ptr<OBResult> result) mutable {
         std::vector<std::string> keys;
@@ -299,7 +274,7 @@ void OBStoreClient::AsyncGetAll(
   ob_context_->ExecuteAsync(
       sql,
       std::move(bind_params),
-      /*is_select=*/true,
+      OBExecuteType::kQuery,
       [callback = std::move(callback),
        table_prefix = ob_key.TablePrefix()](std::shared_ptr<OBResult> result) mutable {
         absl::flat_hash_map<std::string, std::string> key_value_map;
@@ -377,18 +352,18 @@ void OBStoreClient::SendOBCmdWithKeys(std::vector<std::string> keys,
       absl::MutexLock lock(&mu_);
       *num_ready_keys += 1;
       RAY_LOG(DEBUG) << "Ready keys: " << *num_ready_keys
-                    << " / All required keys: " << concurrency_keys.size();
+                     << " / All required keys: " << concurrency_keys.size();
       RAY_CHECK(*num_ready_keys <= concurrency_keys.size());
       if (*num_ready_keys != concurrency_keys.size()) {
         return;
       }
     }
     RAY_LOG(DEBUG) << *num_ready_keys << " / " << concurrency_keys.size()
-                  << " keys are ready, send the request to OB.";
+                   << " keys are ready, send the request to OB.";
     ob_context_->ExecuteAsync(
         command.sql,
         std::move(command.bind_params),
-        command.is_select,
+        command.execute_type,
         [this, concurrency_keys, ob_callback = std::move(ob_callback)](
             std::shared_ptr<OBResult> result) mutable {
           if (ob_callback) {
@@ -430,7 +405,7 @@ void OBStoreClient::AsyncCheckHealth(Postable<void(Status)> callback) {
   ob_context_->ExecuteAsync(
       "SELECT 1",
       /*bind_params=*/{},
-      /*is_select=*/true,
+      OBExecuteType::kQuery,
       [callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         Status status = Status::OK();
         if (!result || !result->status.ok() || result->rows.empty()) {
