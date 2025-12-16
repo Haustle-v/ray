@@ -71,7 +71,8 @@ Status OBContext::Initialize(const OBClientOptions &options) {
       stmt->execute(sql);
       return Status::OK();
     } catch (const sql::SQLException &e) {
-      return Status::IOError(e.what());
+      RAY_LOG(ERROR) << "Failed to execute schema SQL: " << e.what();
+      return Status::IOError(absl::StrCat("Failed to execute schema SQL: ", e.what()));
     }
   };
 
@@ -93,6 +94,28 @@ Status OBContext::Initialize(const OBClientOptions &options) {
     RAY_LOG(ERROR) << "Failed to create table " << kRayGcsTableNameInOB << ": "
                    << status.ToString();
     return status;
+  }
+
+  // Initialize job counter
+  if (job_counter_k_.empty()) {
+    SetJobCounterKey("default");
+  }
+  try {
+    std::unique_ptr<sql::PreparedStatement> stmt(
+        schema_conn->prepareStatement(absl::StrCat(
+            "INSERT IGNORE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)")));
+    stmt->setString(1, sql::SQLString(job_counter_k_.data(), job_counter_k_.size()));
+    stmt->setString(2, sql::SQLString("0", 1));
+    int affected_rows = stmt->executeUpdate();
+    if (affected_rows != 1) {
+      RAY_LOG(ERROR) << "Failed to initialize job counter, affected_rows="
+                     << affected_rows;
+      return Status::IOError(absl::StrCat(
+          "Failed to initialize job counter, affected_rows=", affected_rows));
+    }
+  } catch (const sql::SQLException &e) {
+    RAY_LOG(ERROR) << "Failed to initialize job counter: " << e.what();
+    return Status::IOError(absl::StrCat("Failed to initialize job counter: ", e.what()));
   }
 
   for (int i = 0; i < options_.connection_pool_size; ++i) {
@@ -175,11 +198,10 @@ void OBContext::ReleaseConnection(sql::Connection *conn) {
   connection_pool_.push(conn);
 }
 
-std::shared_ptr<OBResult> OBContext::ExecuteSync(
-    sql::Connection *conn,
-    const std::string &sql,
-    const std::vector<std::string> &bind_params,
-    bool is_select) {
+std::shared_ptr<OBResult> OBContext::ExecuteSync(sql::Connection *conn,
+                                                 const std::string &sql,
+                                                 std::vector<std::string> bind_params,
+                                                 OBExecuteType execute_type) {
   auto result = std::make_shared<OBResult>();
 
   if (!conn) {
@@ -189,6 +211,10 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
   }
 
   try {
+    if (execute_type == OBExecuteType::kGetNextJobID) {
+      bind_params.emplace_back(std::to_string(current_job_id_.load()));
+    }
+
     std::unique_ptr<sql::PreparedStatement> stmt(conn->prepareStatement(sql));
     for (size_t i = 0; i < bind_params.size(); ++i) {
       const auto &value = bind_params[i];
@@ -196,14 +222,29 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
                       sql::SQLString(value.data(), value.size()));
     }
 
-    if (!is_select) {
+    if (execute_type == OBExecuteType::kUpdate) {
       result->affected_rows = stmt->executeUpdate();
       return result;
     }
 
+    if (execute_type == OBExecuteType::kGetNextJobID) {
+      result->affected_rows = stmt->executeUpdate();
+      if (result->affected_rows == 1) {
+        current_job_id_.fetch_add(1);
+        result->rows = {{std::to_string(current_job_id_.load())}};
+        return result;
+      } else {
+        RAY_LOG(ERROR) << "Failed to get next job id, affected_rows="
+                       << result->affected_rows;
+        result->status = Status::IOError("Failed to get next job id, affected_rows=" +
+                                         std::to_string(result->affected_rows));
+        return result;
+      }
+    }
+
     std::unique_ptr<sql::ResultSet> res(stmt->executeQuery());
     if (!res) {
-      RAY_LOG(WARNING) << "Statement executed with no ResultSet, return";
+      RAY_LOG(WARNING) << "Query statement executed with no ResultSet, return";
       return result;
     }
 
@@ -243,13 +284,13 @@ std::shared_ptr<OBResult> OBContext::ExecuteSync(
 
 void OBContext::ExecuteAsync(const std::string &sql,
                              const std::vector<std::string> &bind_params,
-                             bool is_select,
+                             OBExecuteType execute_type,
                              OBCallback callback) {
   instrumented_io_context *worker = io_service_pool_->Get();
   worker->post(
-      [this, sql, bind_params, is_select, callback = std::move(callback)]() mutable {
+      [this, sql, bind_params, execute_type, callback = std::move(callback)]() mutable {
         sql::Connection *conn = AcquireConnection();
-        auto result = ExecuteSync(conn, sql, bind_params, is_select);
+        auto result = ExecuteSync(conn, sql, bind_params, execute_type);
         ReleaseConnection(conn);
 
         // Post callback to io_service

@@ -36,14 +36,14 @@ struct OBCommand {
   std::string table_name;
   std::string sql;
   std::vector<std::string> bind_params;
-  bool is_select;
+  OBExecuteType execute_type;
 };
 
 // StoreClient using OceanBase/MySQL as persistence backend.
 //
 // Schema:
 // - A single table `RAY_GCS` stores all entries.
-// - Column layout: k VARBINARY(65535) PRIMARY KEY, v MEDIUMBLOB.
+// - Column layout: k VARBINARY(16384) PRIMARY KEY, v MEDIUMBLOB.
 // - The actual logical table name is encoded into the key prefix.
 //
 // Consistency:
@@ -141,7 +141,6 @@ class OBStoreClient : public StoreClient {
   absl::flat_hash_map<OBConcurrencyKey, std::queue<std::function<void()>>>
       pending_ob_request_by_key_ ABSL_GUARDED_BY(mu_);
   absl::Mutex job_counter_status_mu_;
-  bool job_counter_inserted_ = false;
   FRIEND_TEST(OBStoreClientTest, Random);
 };
 

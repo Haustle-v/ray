@@ -83,7 +83,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("INSERT INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)"),
       {key, val_insert},
-      false,
+      OBExecuteType::kUpdate,
       [done, &key, &val_insert](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -99,7 +99,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      true,
+      OBExecuteType::kQuery,
       [done, &key, &val_insert](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -119,7 +119,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("UPDATE ", kRayGcsTableNameInOB, " SET v = ? WHERE k = ?"),
       {val_update, key},
-      false,
+      OBExecuteType::kUpdate,
       [done, &key, &val_update](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -135,7 +135,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      true,
+      OBExecuteType::kQuery,
       [done, &key, &val_update](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -155,7 +155,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("REPLACE INTO ", kRayGcsTableNameInOB, " (k, v) VALUES (?, ?)"),
       {key, val_replace},
-      false,
+      OBExecuteType::kUpdate,
       [done, &key, &val_replace](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -172,7 +172,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   ctx.ExecuteAsync(
       absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
       {key},
-      true,
+      OBExecuteType::kQuery,
       [done, &key, &val_replace](std::shared_ptr<OBResult> res) {
         ASSERT_TRUE(res) << "res null";
         ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -190,7 +190,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   pending++;
   ctx.ExecuteAsync(absl::StrCat("DELETE FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
                    {key},
-                   false,
+                   OBExecuteType::kUpdate,
                    [done, &key](std::shared_ptr<OBResult> res) {
                      ASSERT_TRUE(res) << "res null";
                      ASSERT_TRUE(res->status.ok()) << res->status.ToString();
@@ -206,7 +206,7 @@ TEST_F(OBContextTest, ExecuteAsyncCRUD) {
   pending++;
   ctx.ExecuteAsync(absl::StrCat("SELECT v FROM ", kRayGcsTableNameInOB, " WHERE k = ?"),
                    {key},
-                   true,
+                   OBExecuteType::kQuery,
                    [done, &key](std::shared_ptr<OBResult> res) {
                      ASSERT_TRUE(res) << "res null";
                      ASSERT_TRUE(res->status.ok()) << res->status.ToString();
