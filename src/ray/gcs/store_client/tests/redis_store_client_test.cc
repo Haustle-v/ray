@@ -18,6 +18,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -373,6 +374,48 @@ TEST_F(RedisStoreClientTest, Random) {
       reinterpret_cast<RedisStoreClient *>(store_client_.get());
   absl::MutexLock lock(&redis_store_client_raw_ptr->mu_);
   ASSERT_TRUE(redis_store_client_raw_ptr->pending_redis_request_by_key_.empty());
+}
+
+TEST_F(RedisStoreClientTest, GetNextJobID) {
+  int job_id_num = 2000;
+  std::vector<int> results;
+  std::mutex results_mu;
+  std::atomic<int> pending(job_id_num);
+  std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+
+  std::vector<std::thread> threads;
+  int thread_num = 4;
+  for (int t = 0; t < thread_num; ++t) {
+    threads.emplace_back([&] {
+      for (int i = 0; i < job_id_num / thread_num; ++i) {
+        store_client_->AsyncGetNextJobID({[&](int job_id) {
+                                            {
+                                              std::lock_guard<std::mutex> lock(
+                                                  results_mu);
+                                              results.push_back(job_id);
+                                            }
+                                            pending.fetch_sub(1);
+                                          },
+                                          *io_service_pool_->Get()});
+      }
+    });
+  }
+  for (auto &thread : threads) thread.join();
+
+  ASSERT_TRUE(WaitForCondition([&pending]() { return pending == 0; }, 60000));
+  std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+  auto duration_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)
+          .count();
+  RAY_LOG(INFO) << "Duration: " << duration_ms << " ms for " << job_id_num << " jobs";
+  RAY_LOG(INFO) << "Average time per job: " << duration_ms / job_id_num << " ms";
+  std::sort(results.begin(), results.end());
+  ASSERT_EQ(results.size(), job_id_num);
+  ASSERT_EQ(results[0], 1);
+  ASSERT_EQ(results[results.size() - 1], job_id_num);
+  for (size_t i = 1; i < results.size(); ++i) {
+    ASSERT_EQ(results[i], results[i - 1] + 1);
+  }
 }
 
 }  // namespace gcs

@@ -203,8 +203,8 @@ void OBStoreClient::AsyncGetNextJobID(Postable<void(int)> callback) {
   OBCallback ob_callback =
       [this, callback = std::move(callback)](std::shared_ptr<OBResult> result) mutable {
         RAY_CHECK_OK(result->status);
-        std::move(callback).Dispatch("OBStoreClient.AsyncGetNextJobID",
-                                     std::stoi(result->rows[0][0]));
+        std::move(callback).Post("OBStoreClient.AsyncGetNextJobID",
+                                 std::stoi(result->rows[0][0]));
       };
 
   // job_counter_v will be passed to bind_params in the ExecuteSync
