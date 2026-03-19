@@ -1,5 +1,7 @@
 [project]
 requires-python = ">=3.9"
+name = "ray"
+version = "3.0.0.dev0"      # should be the same as in "python/ray/_version.py"
 
 [tool.ruff]
 line-length = 88

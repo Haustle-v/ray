@@ -43,7 +43,7 @@ constexpr size_t IndexOf(const std::array<T, N> &arr, const T &value) {
     }
   }
   // Throwing in constexpr context leads to a compile error.
-  throw "Value not found in array";
+  // throw "Value not found in array";
 }
 
 }  // namespace ray
