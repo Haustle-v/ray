@@ -391,7 +391,15 @@ RAY_CONFIG(int, gcs_resource_report_poll_period_ms, 100)
 // The number of concurrent polls to polls to GCS.
 RAY_CONFIG(uint64_t, gcs_max_concurrent_resource_pulls, 100)
 // The storage backend to use for the GCS. It can be either 'redis', 'memory' or 'oceanbase'.
-RAY_CONFIG(std::string, gcs_storage, "oceanbase")
+RAY_CONFIG(std::string, gcs_storage, "memory")
+// OceanBase connection settings when gcs_storage is "oceanbase". Override via --system-config
+RAY_CONFIG(std::string, gcs_ob_address, "your_server_ip")
+RAY_CONFIG(int, gcs_ob_port, 2881)
+RAY_CONFIG(std::string, gcs_ob_username, "your_username")
+RAY_CONFIG(std::string, gcs_ob_password, "your_password")
+RAY_CONFIG(std::string, gcs_ob_database, "your_database")
+RAY_CONFIG(int, gcs_ob_connection_pool_size, 12)
+RAY_CONFIG(int, gcs_ob_thread_pool_size, 10)
 
 /// Duration to sleep after failing to put an object in plasma because it is full.
 RAY_CONFIG(uint32_t, object_store_full_delay_ms, 10)

@@ -166,6 +166,17 @@ int main(int argc, char *argv[]) {
   gcs_server_config.raylet_config_list = config_list;
   gcs_server_config.session_name = session_name;
 
+  gcs_server_config.ob_address = RayConfig::instance().gcs_ob_address();
+  gcs_server_config.ob_port =
+      static_cast<uint16_t>(RayConfig::instance().gcs_ob_port());
+  gcs_server_config.ob_username = RayConfig::instance().gcs_ob_username();
+  gcs_server_config.ob_password = RayConfig::instance().gcs_ob_password();
+  gcs_server_config.ob_database = RayConfig::instance().gcs_ob_database();
+  gcs_server_config.ob_connection_pool_size =
+      RayConfig::instance().gcs_ob_connection_pool_size();
+  gcs_server_config.ob_thread_pool_size =
+      RayConfig::instance().gcs_ob_thread_pool_size();
+
   // Create individual metrics
   auto actor_by_state_gauge = ray::GetActorByStateGaugeMetric();
   auto gcs_actor_by_state_gauge = ray::gcs::GetGcsActorByStateGaugeMetric();
