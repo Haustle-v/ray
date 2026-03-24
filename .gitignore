@@ -8,7 +8,7 @@
 /python/ray/jars/
 /python/ray/cpp/
 /python/build
-/python/dist
+# /python/dist
 /python/python-driver-*
 /python/ray/serve/generated
 /thirdparty/pkg/
